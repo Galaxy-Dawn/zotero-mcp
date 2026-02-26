@@ -107,6 +107,11 @@ def get_zotero_client() -> zotero.Zotero:
     """
     Get authenticated Zotero client using environment variables.
 
+    Connection mode priority:
+    1. ZOTERO_LOCAL=true  → always use local Zotero desktop (port 23119)
+    2. ZOTERO_LOCAL=false → always use Zotero Web API
+    3. ZOTERO_LOCAL unset → auto: try local first, fall back to Web API
+
     If a runtime library override is active (via set_active_library()),
     those values take precedence over environment variables.
 
@@ -116,29 +121,57 @@ def get_zotero_client() -> zotero.Zotero:
     Raises:
         ValueError: If required environment variables are missing.
     """
-    # Runtime overrides take precedence over environment variables
     override = _active_library_override
     library_id = override.get("library_id") or os.getenv("ZOTERO_LIBRARY_ID")
     library_type = override.get("library_type") or os.getenv("ZOTERO_LIBRARY_TYPE", "user")
     api_key = os.getenv("ZOTERO_API_KEY")
-    local = os.getenv("ZOTERO_LOCAL", "").lower() in ["true", "yes", "1"]
+    local_env = os.getenv("ZOTERO_LOCAL", "").lower()
 
-    # For local API, default to user ID 0 if not specified
-    if local and not library_id:
-        library_id = "0"
-
-    # For remote API, we need both library_id and api_key
-    if not local and not (library_id and api_key):
-        raise ValueError(
-            "Missing required environment variables. Please set ZOTERO_LIBRARY_ID and ZOTERO_API_KEY, "
-            "or use ZOTERO_LOCAL=true for local Zotero instance."
+    if local_env in ("true", "yes", "1"):
+        # Explicit local mode
+        return zotero.Zotero(
+            library_id=library_id or "0",
+            library_type=library_type,
+            api_key=api_key,
+            local=True,
         )
 
+    if local_env in ("false", "no", "0"):
+        # Explicit web mode
+        if not (library_id and api_key):
+            raise ValueError(
+                "Missing required environment variables. Please set ZOTERO_LIBRARY_ID and ZOTERO_API_KEY."
+            )
+        return zotero.Zotero(
+            library_id=library_id,
+            library_type=library_type,
+            api_key=api_key,
+            local=False,
+        )
+
+    # Auto mode: try local Zotero desktop first, fall back to Web API
+    try:
+        client = zotero.Zotero(
+            library_id=library_id or "0",
+            library_type=library_type,
+            api_key=None,
+            local=True,
+        )
+        client.items(limit=1)
+        return client
+    except Exception:
+        pass
+
+    if not (library_id and api_key):
+        raise ValueError(
+            "Local Zotero is not running and web credentials are not configured. "
+            "Either start Zotero desktop, or set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID."
+        )
     return zotero.Zotero(
         library_id=library_id,
         library_type=library_type,
         api_key=api_key,
-        local=local,
+        local=False,
     )
 
 
