@@ -120,7 +120,6 @@ def _attach_unpaywall_pdf(
 ) -> str:
     """Fetch OA PDF from Unpaywall and attach it to item_key. Returns status line."""
     import tempfile
-    import urllib.request
     try:
         resp = requests.get(
             f"https://api.unpaywall.org/v2/{doi}",
@@ -134,8 +133,11 @@ def _attach_unpaywall_pdf(
         if not pdf_url:
             return f"  (no OA PDF found for {doi})"
         ctx.info(f"Downloading OA PDF from {pdf_url}")
+        pdf_resp = requests.get(pdf_url, timeout=60, stream=True)
+        pdf_resp.raise_for_status()
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            urllib.request.urlretrieve(pdf_url, tmp.name)
+            for chunk in pdf_resp.iter_content(chunk_size=8192):
+                tmp.write(chunk)
             zot.attachment_simple([tmp.name], item_key)
         return "  ✓ OA PDF attached"
     except Exception as e:
