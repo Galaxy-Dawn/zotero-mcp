@@ -81,6 +81,7 @@ def fake_zot():
 def patch_web_client(monkeypatch, fake_zot):
     """Patch server.get_web_zotero_client to return fake_zot."""
     monkeypatch.setattr(server, "get_web_zotero_client", lambda: fake_zot)
+    monkeypatch.setenv("UNSAFE_OPERATIONS", "all")
     return fake_zot
 
 
@@ -88,3 +89,4 @@ def patch_web_client(monkeypatch, fake_zot):
 def patch_no_credentials(monkeypatch):
     """Simulate missing credentials (returns None)."""
     monkeypatch.setattr(server, "get_web_zotero_client", lambda: None)
+    monkeypatch.setenv("UNSAFE_OPERATIONS", "all")

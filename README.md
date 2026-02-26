@@ -37,6 +37,8 @@ This is a personal fork. The main additions over the upstream repo:
 | `zotero_update_collection` | Rename a collection or change its parent |
 | `zotero_delete_collection` | Delete a collection (items inside are kept) |
 | `zotero_delete_items` | Move items to trash (recoverable) |
+| `zotero_find_and_attach_pdfs` | Find OA PDFs for existing items via Unpaywall and attach them |
+| `zotero_add_linked_url_attachment` | Add a linked URL attachment to an existing item |
 
 ### 🔑 Auto-Load Credentials from AI Tool Configs
 
@@ -330,6 +332,10 @@ Environment variables already set in the shell always take precedence.
 - `GEMINI_BASE_URL`: Custom Gemini endpoint URL (optional, for use with compatible APIs)
 - `ZOTERO_DB_PATH`: Custom `zotero.sqlite` path (optional)
 
+**PDF Auto-Attach:**
+- `UNPAYWALL_EMAIL`: Your email for Unpaywall API (free, required for PDF auto-attach via `zotero_find_and_attach_pdfs` or `add_items_by_doi` with `attach_pdf=true`)
+- `UNSAFE_OPERATIONS`: Set to `items` to enable `zotero_delete_items`; set to `all` to also enable `zotero_delete_collection`
+
 ### Command-Line Options
 
 ```bash
@@ -408,6 +414,8 @@ The first time you use PDF annotation features, the necessary tools will be auto
 - `zotero_add_items_by_doi`: Import papers by DOI — fetches metadata from CrossRef automatically
 - `zotero_add_items_by_arxiv`: Import preprints by arXiv ID (bare ID, `arXiv:` prefix, full URL, or DOI prefix all accepted)
 - `zotero_add_item_by_url`: Save a webpage as a Zotero item — title extracted from `og:title` or `<title>`
+- `zotero_find_and_attach_pdfs`: Find and attach OA PDFs for existing items via Unpaywall (requires `UNPAYWALL_EMAIL`)
+- `zotero_add_linked_url_attachment`: Add a linked URL attachment to an existing item
 
 **Edit**
 - `zotero_update_item`: Update any field on an existing library item

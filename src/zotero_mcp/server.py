@@ -78,7 +78,68 @@ async def server_lifespan(server: FastMCP):
 
 
 # Create an MCP server (fastmcp 2.14+ no longer accepts `dependencies`)
-mcp = FastMCP("Zotero", lifespan=server_lifespan)
+mcp = FastMCP(
+    "Zotero",
+    instructions=(
+        "This server connects to your Zotero research library. "
+        "For discovery, prefer zotero_semantic_search first, then zotero_search_items. "
+        "Write tools (import, edit, delete) require ZOTERO_API_KEY + ZOTERO_LIBRARY_ID. "
+        "Destructive tools (delete_items, delete_collection) require UNSAFE_OPERATIONS env var."
+    ),
+    lifespan=server_lifespan,
+)
+
+
+def _require_unsafe(level: str) -> str | None:
+    """Return an error string if UNSAFE_OPERATIONS env var doesn't permit `level`.
+
+    level="items"  → requires UNSAFE_OPERATIONS in {"items", "all"}
+    level="all"    → requires UNSAFE_OPERATIONS == "all"
+    Returns None if the operation is permitted.
+    """
+    allowed = os.environ.get("UNSAFE_OPERATIONS", "").lower()
+    if level == "items" and allowed not in ("items", "all"):
+        return (
+            "Error: This operation is disabled by default. "
+            "Set UNSAFE_OPERATIONS=items (or UNSAFE_OPERATIONS=all) to enable it."
+        )
+    if level == "all" and allowed != "all":
+        return (
+            "Error: This operation is disabled by default. "
+            "Set UNSAFE_OPERATIONS=all to enable it."
+        )
+    return None
+
+
+def _attach_unpaywall_pdf(
+    zot,
+    doi: str,
+    item_key: str,
+    email: str,
+    ctx: Context,
+) -> str:
+    """Fetch OA PDF from Unpaywall and attach it to item_key. Returns status line."""
+    import tempfile
+    import urllib.request
+    try:
+        resp = requests.get(
+            f"https://api.unpaywall.org/v2/{doi}",
+            params={"email": email},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        best = data.get("best_oa_location") or {}
+        pdf_url = best.get("url_for_pdf") or best.get("url")
+        if not pdf_url:
+            return f"  (no OA PDF found for {doi})"
+        ctx.info(f"Downloading OA PDF from {pdf_url}")
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            urllib.request.urlretrieve(pdf_url, tmp.name)
+            zot.attachment_simple([tmp.name], item_key)
+        return "  ✓ OA PDF attached"
+    except Exception as e:
+        return f"  ✗ PDF attach failed: {e}"
 
 
 @mcp.tool(
@@ -2652,6 +2713,7 @@ def connector_fetch(
 def add_items_by_doi(
     dois: list[str],
     collection_key: str | None = None,
+    attach_pdf: bool = False,
     *,
     ctx: Context,
 ) -> str:
@@ -2661,6 +2723,7 @@ def add_items_by_doi(
     Args:
         dois: List of DOI strings (e.g. ["10.1038/nature12345"]).
         collection_key: Optional collection key to add items to.
+        attach_pdf: If True, attempt to attach an OA PDF via Unpaywall (requires UNPAYWALL_EMAIL).
         ctx: MCP context.
 
     Returns:
@@ -2721,6 +2784,12 @@ def add_items_by_doi(
                 if created:
                     key = list(created.values())[0].get("key", "?")
                     results.append(f"✓ {template['title']} → key `{key}`")
+                    if attach_pdf:
+                        email = os.environ.get("UNPAYWALL_EMAIL", "")
+                        if not email:
+                            results.append("  (set UNPAYWALL_EMAIL to enable PDF auto-attach)")
+                        else:
+                            results.append(_attach_unpaywall_pdf(zot, doi, key, email, ctx))
                 else:
                     failed = resp2.get("failed", {})
                     results.append(f"✗ {doi}: {failed}")
@@ -2730,6 +2799,102 @@ def add_items_by_doi(
         return "\n".join(results) if results else "No DOIs processed."
     except Exception as e:
         ctx.error(f"Error in add_items_by_doi: {e}")
+        return f"Error: {e}"
+
+
+@mcp.tool(
+    name="zotero_find_and_attach_pdfs",
+    description="Find open-access PDFs for existing Zotero items via Unpaywall and attach them. Requires UNPAYWALL_EMAIL env var."
+)
+def find_and_attach_pdfs(
+    item_keys: list[str],
+    *,
+    ctx: Context,
+) -> str:
+    """
+    For each item key, look up its DOI, query Unpaywall for an OA PDF,
+    download it, and attach it to the item.
+
+    Args:
+        item_keys: List of Zotero item keys to process.
+        ctx: MCP context.
+
+    Returns:
+        Per-item result summary.
+    """
+    try:
+        zot = get_web_zotero_client()
+        if zot is None:
+            return "Error: Web API credentials not configured. Set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID."
+        email = os.environ.get("UNPAYWALL_EMAIL", "")
+        if not email:
+            return "Error: Set UNPAYWALL_EMAIL to use this tool."
+
+        results = []
+        for key in item_keys:
+            try:
+                item = zot.item(key)
+                doi = item.get("data", {}).get("DOI", "").strip()
+                if not doi:
+                    results.append(f"✗ {key}: no DOI found")
+                    continue
+                status = _attach_unpaywall_pdf(zot, doi, key, email, ctx)
+                results.append(f"{key}: {status.strip()}")
+            except Exception as e:
+                results.append(f"✗ {key}: {e}")
+
+        return "\n".join(results) if results else "No items processed."
+    except Exception as e:
+        ctx.error(f"Error in find_and_attach_pdfs: {e}")
+        return f"Error: {e}"
+
+
+@mcp.tool(
+    name="zotero_add_linked_url_attachment",
+    description="Add a linked URL attachment to an existing Zotero item."
+)
+def add_linked_url_attachment(
+    item_key: str,
+    url: str,
+    title: str | None = None,
+    *,
+    ctx: Context,
+) -> str:
+    """
+    Attach a linked URL to an existing Zotero item.
+
+    Args:
+        item_key: Key of the parent item.
+        url: URL to attach.
+        title: Optional display title for the attachment.
+        ctx: MCP context.
+
+    Returns:
+        Confirmation string with the new attachment key.
+    """
+    try:
+        zot = get_web_zotero_client()
+        if zot is None:
+            return "Error: Web API credentials not configured. Set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID."
+
+        template = {
+            "itemType": "attachment",
+            "linkMode": "linked_url",
+            "title": title or url,
+            "url": url,
+            "parentItem": item_key,
+            "tags": [],
+            "relations": {},
+        }
+        resp = zot.create_items([template])
+        created = resp.get("successful", {})
+        if created:
+            key = list(created.values())[0].get("key", "?")
+            return f"✓ Linked URL attached to {item_key} → attachment key `{key}`"
+        failed = resp.get("failed", {})
+        return f"✗ Failed: {failed}"
+    except Exception as e:
+        ctx.error(f"Error in add_linked_url_attachment: {e}")
         return f"Error: {e}"
 
 
@@ -3169,6 +3334,8 @@ def delete_collection(
     Returns:
         Confirmation message or error string.
     """
+    if err := _require_unsafe("all"):
+        return err
     try:
         zot = get_web_zotero_client()
         if zot is None:
@@ -3206,6 +3373,8 @@ def delete_items(
     Returns:
         Per-item result summary.
     """
+    if err := _require_unsafe("items"):
+        return err
     try:
         zot = get_web_zotero_client()
         if zot is None:

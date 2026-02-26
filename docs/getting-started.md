@@ -207,6 +207,8 @@ When connected to Claude Desktop or another MCP client, you'll have access to th
 - **zotero_add_items_by_doi**: Import papers by DOI — metadata fetched from CrossRef automatically
 - **zotero_add_items_by_arxiv**: Import preprints by arXiv ID (bare ID, `arXiv:` prefix, full URL, or DOI prefix all accepted)
 - **zotero_add_item_by_url**: Save a webpage — title extracted from `og:title` or `<title>`
+- **zotero_find_and_attach_pdfs**: Find and attach OA PDFs for existing items via Unpaywall (requires `UNPAYWALL_EMAIL`)
+- **zotero_add_linked_url_attachment**: Add a linked URL attachment to an existing item
 
 **Edit**
 - **zotero_create_note**: Create a new note attached to an item
