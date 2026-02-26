@@ -16,6 +16,61 @@ from zotero_mcp.utils import format_creators
 # Load environment variables
 load_dotenv()
 
+
+def _load_from_ai_tool_configs() -> None:
+    """Read Zotero credentials from AI tool config files (Claude Code / OpenCode / Codex CLI)."""
+    import json
+    import re
+
+    home = Path.home()
+    candidates = []
+
+    # Claude Code: ~/.claude/settings.json → mcpServers.zotero.env
+    p = home / ".claude" / "settings.json"
+    if p.exists():
+        try:
+            d = json.loads(p.read_text())
+            env = d.get("mcpServers", {}).get("zotero", {}).get("env", {})
+            if env:
+                candidates.append(env)
+        except Exception:
+            pass
+
+    # OpenCode: ~/opencode.jsonc → mcp.servers.zotero.env  (strip // comments)
+    p = home / "opencode.jsonc"
+    if p.exists():
+        try:
+            text = re.sub(r"//[^\n]*", "", p.read_text())
+            d = json.loads(text)
+            env = d.get("mcp", {}).get("servers", {}).get("zotero", {}).get("env", {})
+            if env:
+                candidates.append(env)
+        except Exception:
+            pass
+
+    # Codex CLI: ~/.codex/config.toml → mcp_servers.zotero.env
+    p = home / ".codex" / "config.toml"
+    if p.exists():
+        try:
+            try:
+                import tomllib
+            except ImportError:
+                import tomli as tomllib  # type: ignore[no-redef]
+            d = tomllib.loads(p.read_bytes())
+            env = d.get("mcp_servers", {}).get("zotero", {}).get("env", {})
+            if env:
+                candidates.append(env)
+        except Exception:
+            pass
+
+    for env in candidates:
+        for k, v in env.items():
+            if k not in os.environ:
+                os.environ[k] = str(v)
+
+
+_load_from_ai_tool_configs()
+
 # Runtime library override state — set by zotero_switch_library tool.
 # When non-empty, these values override the corresponding environment variables
 # in get_zotero_client(). Keys: "library_id", "library_type".

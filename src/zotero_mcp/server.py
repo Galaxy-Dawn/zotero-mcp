@@ -1,4 +1,4 @@
-﻿"""
+"""
 Zotero MCP server implementation.
 
 Note: ChatGPT requires specific tool names "search" and "fetch", and so they
@@ -2952,3 +2952,555 @@ def connector_fetch(
             "url": "",
             "metadata": {"error": str(e)}
         }, separators=(",", ":"))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Write Tools — Group A: Item Creation
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool(
+    name="zotero_add_items_by_doi",
+    description="Add one or more items to Zotero by DOI. Fetches metadata from CrossRef and creates items in the library."
+)
+def add_items_by_doi(
+    dois: list[str],
+    collection_key: str | None = None,
+    *,
+    ctx: Context,
+) -> str:
+    """
+    Add items to Zotero by DOI using CrossRef metadata.
+
+    Args:
+        dois: List of DOI strings (e.g. ["10.1038/nature12345"]).
+        collection_key: Optional collection key to add items to.
+        ctx: MCP context.
+
+    Returns:
+        Markdown summary of added items.
+    """
+    try:
+        zot = get_web_zotero_client()
+        if zot is None:
+            return "Error: Web API credentials not configured. Set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID."
+
+        results = []
+        for doi in dois:
+            doi = doi.strip()
+            ctx.info(f"Fetching metadata for DOI: {doi}")
+            try:
+                resp = requests.get(
+                    f"https://api.crossref.org/works/{doi}",
+                    headers={"User-Agent": "zotero-mcp/1.0 (mailto:user@example.com)"},
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                work = resp.json().get("message", {})
+
+                # Build Zotero item template
+                template = zot.item_template("journalArticle")
+                template["title"] = work.get("title", [""])[0]
+                template["DOI"] = doi
+                template["url"] = work.get("URL", f"https://doi.org/{doi}")
+
+                # Authors
+                authors = []
+                for author in work.get("author", []):
+                    authors.append({
+                        "creatorType": "author",
+                        "firstName": author.get("given", ""),
+                        "lastName": author.get("family", ""),
+                    })
+                template["creators"] = authors
+
+                # Date
+                date_parts = work.get("published", {}).get("date-parts", [[]])
+                if date_parts and date_parts[0]:
+                    template["date"] = "-".join(str(p) for p in date_parts[0])
+
+                # Journal info
+                template["publicationTitle"] = work.get("container-title", [""])[0]
+                template["volume"] = str(work.get("volume", ""))
+                template["issue"] = str(work.get("issue", ""))
+                template["pages"] = work.get("page", "")
+                template["abstractNote"] = work.get("abstract", "")
+
+                # Collections
+                if collection_key:
+                    template["collections"] = [collection_key]
+
+                resp2 = zot.create_items([template])
+                created = resp2.get("successful", {})
+                if created:
+                    key = list(created.values())[0].get("key", "?")
+                    results.append(f"✓ {template['title']} → key `{key}`")
+                else:
+                    failed = resp2.get("failed", {})
+                    results.append(f"✗ {doi}: {failed}")
+            except Exception as e:
+                results.append(f"✗ {doi}: {e}")
+
+        return "\n".join(results) if results else "No DOIs processed."
+    except Exception as e:
+        ctx.error(f"Error in add_items_by_doi: {e}")
+        return f"Error: {e}"
+
+
+@mcp.tool(
+    name="zotero_add_items_by_arxiv",
+    description="Add one or more preprints to Zotero by arXiv ID. Fetches metadata from the arXiv API."
+)
+def add_items_by_arxiv(
+    arxiv_ids: list[str],
+    collection_key: str | None = None,
+    *,
+    ctx: Context,
+) -> str:
+    """
+    Add preprints to Zotero by arXiv ID.
+
+    Args:
+        arxiv_ids: List of arXiv IDs in any common format
+                   (e.g. "2301.12345", "arXiv:2301.12345", "https://arxiv.org/abs/2301.12345").
+        collection_key: Optional collection key to add items to.
+        ctx: MCP context.
+
+    Returns:
+        Markdown summary of added items.
+    """
+    import urllib.request
+    import xml.etree.ElementTree as ET
+
+    def _normalize(raw: str) -> str:
+        raw = raw.strip()
+        for prefix in ("https://arxiv.org/abs/", "http://arxiv.org/abs/",
+                        "10.48550/arXiv.", "10.48550/arxiv.",
+                        "arXiv:", "arxiv:"):
+            if raw.startswith(prefix):
+                raw = raw[len(prefix):]
+        return raw
+
+    try:
+        zot = get_web_zotero_client()
+        if zot is None:
+            return "Error: Web API credentials not configured. Set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID."
+
+        results = []
+        for raw_id in arxiv_ids:
+            arxiv_id = _normalize(raw_id)
+            ctx.info(f"Fetching arXiv metadata for: {arxiv_id}")
+            try:
+                url = f"http://export.arxiv.org/api/query?id_list={arxiv_id}"
+                with urllib.request.urlopen(url, timeout=15) as r:
+                    xml_data = r.read()
+
+                ns = {
+                    "atom": "http://www.w3.org/2005/Atom",
+                    "arxiv": "http://arxiv.org/schemas/atom",
+                }
+                root = ET.fromstring(xml_data)
+                entry = root.find("atom:entry", ns)
+                if entry is None:
+                    results.append(f"✗ {arxiv_id}: not found on arXiv")
+                    continue
+
+                title = (entry.findtext("atom:title", "", ns) or "").strip().replace("\n", " ")
+                abstract = (entry.findtext("atom:summary", "", ns) or "").strip()
+                published = (entry.findtext("atom:published", "", ns) or "")[:10]
+                doi_elem = entry.find("arxiv:doi", ns)
+                doi = doi_elem.text.strip() if doi_elem is not None and doi_elem.text else ""
+                category_elem = entry.find("atom:category", ns)
+                category = category_elem.get("term", "") if category_elem is not None else ""
+
+                authors = []
+                for author_elem in entry.findall("atom:author", ns):
+                    name = author_elem.findtext("atom:name", "", ns).strip()
+                    parts = name.rsplit(" ", 1)
+                    if len(parts) == 2:
+                        authors.append({"creatorType": "author", "firstName": parts[0], "lastName": parts[1]})
+                    else:
+                        authors.append({"creatorType": "author", "firstName": "", "lastName": name})
+
+                template = zot.item_template("preprint")
+                template["title"] = title
+                template["abstractNote"] = abstract
+                template["date"] = published
+                template["creators"] = authors
+                template["url"] = f"https://arxiv.org/abs/{arxiv_id}"
+                template["repository"] = "arXiv"
+                template["archiveID"] = f"arXiv:{arxiv_id}"
+                if doi:
+                    template["DOI"] = doi
+                if category:
+                    template["tags"] = [{"tag": category}]
+                if collection_key:
+                    template["collections"] = [collection_key]
+
+                resp = zot.create_items([template])
+                created = resp.get("successful", {})
+                if created:
+                    key = list(created.values())[0].get("key", "?")
+                    results.append(f"✓ {title[:60]} → key `{key}`")
+                else:
+                    results.append(f"✗ {arxiv_id}: {resp.get('failed', {})}")
+            except Exception as e:
+                results.append(f"✗ {arxiv_id}: {e}")
+
+        return "\n".join(results) if results else "No arXiv IDs processed."
+    except Exception as e:
+        ctx.error(f"Error in add_items_by_arxiv: {e}")
+        return f"Error: {e}"
+
+
+@mcp.tool(
+    name="zotero_add_item_by_url",
+    description="Add a webpage item to Zotero by URL. Fetches the page title and OpenGraph metadata."
+)
+def add_item_by_url(
+    url: str,
+    collection_key: str | None = None,
+    title: str | None = None,
+    *,
+    ctx: Context,
+) -> str:
+    """
+    Add a webpage item to Zotero by URL.
+
+    Args:
+        url: The URL of the webpage to add.
+        collection_key: Optional collection key to add the item to.
+        title: Optional title override; auto-detected from page if omitted.
+        ctx: MCP context.
+
+    Returns:
+        Markdown summary of the added item.
+    """
+    import urllib.request
+    from datetime import date
+
+    try:
+        zot = get_web_zotero_client()
+        if zot is None:
+            return "Error: Web API credentials not configured. Set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID."
+
+        ctx.info(f"Fetching page metadata for: {url}")
+        page_title = title
+        description = ""
+
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 zotero-mcp/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                html = r.read(65536).decode("utf-8", errors="replace")
+
+            if not page_title:
+                # Try og:title first, then <title>
+                og = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\'](.*?)["\']', html, re.I)
+                if og:
+                    page_title = og.group(1).strip()
+                else:
+                    t = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+                    if t:
+                        page_title = re.sub(r"<[^>]+>", "", t.group(1)).strip()
+
+            og_desc = re.search(r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']', html, re.I)
+            if og_desc:
+                description = og_desc.group(1).strip()
+        except Exception:
+            pass
+
+        page_title = page_title or url
+
+        template = zot.item_template("webpage")
+        template["title"] = page_title
+        template["url"] = url
+        template["abstractNote"] = description
+        template["accessDate"] = date.today().isoformat()
+        if collection_key:
+            template["collections"] = [collection_key]
+
+        resp = zot.create_items([template])
+        created = resp.get("successful", {})
+        if created:
+            key = list(created.values())[0].get("key", "?")
+            return f"✓ {page_title[:80]} → key `{key}`"
+        return f"✗ Failed: {resp.get('failed', {})}"
+    except Exception as e:
+        ctx.error(f"Error in add_item_by_url: {e}")
+        return f"Error: {e}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Write Tools — Group B: Item Modification
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool(
+    name="zotero_update_item",
+    description="Update fields of an existing Zotero item by its item key."
+)
+def update_item(
+    item_key: str,
+    fields: dict,
+    *,
+    ctx: Context,
+) -> str:
+    """
+    Update one or more fields of a Zotero item.
+
+    Args:
+        item_key: The Zotero item key (e.g. "ABC12345").
+        fields: Dictionary of field names and new values to set.
+        ctx: MCP context.
+
+    Returns:
+        Summary of changed fields.
+    """
+    try:
+        zot = get_web_zotero_client()
+        if zot is None:
+            return "Error: Web API credentials not configured."
+
+        ctx.info(f"Fetching item {item_key}")
+        item = zot.item(item_key)
+        data = item.get("data", {})
+
+        changed = []
+        for field, value in fields.items():
+            old = data.get(field)
+            data[field] = value
+            changed.append(f"  {field}: {repr(old)} → {repr(value)}")
+
+        item["data"] = data
+        zot.update_item(item)
+        return "Updated:\n" + "\n".join(changed)
+    except Exception as e:
+        ctx.error(f"Error in update_item: {e}")
+        return f"Error: {e}"
+
+
+@mcp.tool(
+    name="zotero_update_note",
+    description="Replace the HTML content of an existing Zotero note item."
+)
+def update_note(
+    item_key: str,
+    content: str,
+    *,
+    ctx: Context,
+) -> str:
+    """
+    Update the content of a Zotero note item.
+
+    Args:
+        item_key: The Zotero item key of the note.
+        content: New note content (HTML allowed).
+        ctx: MCP context.
+
+    Returns:
+        Confirmation message.
+    """
+    try:
+        zot = get_web_zotero_client()
+        if zot is None:
+            return "Error: Web API credentials not configured."
+
+        ctx.info(f"Fetching note {item_key}")
+        item = zot.item(item_key)
+        data = item.get("data", {})
+
+        if data.get("itemType") != "note":
+            return f"Error: Item {item_key} is type '{data.get('itemType')}', not 'note'."
+
+        data["note"] = content
+        item["data"] = data
+        zot.update_item(item)
+        return f"✓ Note {item_key} updated ({len(content)} chars)."
+    except Exception as e:
+        ctx.error(f"Error in update_note: {e}")
+        return f"Error: {e}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Write Tools — Group C: Organization
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool(
+    name="zotero_create_collection",
+    description="Create a new collection in Zotero, optionally nested under a parent collection."
+)
+def create_collection(
+    name: str,
+    parent_key: str | None = None,
+    *,
+    ctx: Context,
+) -> str:
+    """
+    Create a new Zotero collection.
+
+    Args:
+        name: Name for the new collection.
+        parent_key: Optional key of the parent collection for nesting.
+        ctx: MCP context.
+
+    Returns:
+        The key of the newly created collection.
+    """
+    try:
+        zot = get_web_zotero_client()
+        if zot is None:
+            return "Error: Web API credentials not configured."
+
+        ctx.info(f"Creating collection: {name}")
+        payload: dict = {"name": name}
+        if parent_key:
+            payload["parentCollection"] = parent_key
+
+        resp = zot.create_collections([payload])
+        created = resp.get("successful", {})
+        if created:
+            key = list(created.values())[0].get("key", "?")
+            return f"✓ Collection '{name}' created → key `{key}`"
+        return f"✗ Failed: {resp.get('failed', {})}"
+    except Exception as e:
+        ctx.error(f"Error in create_collection: {e}")
+        return f"Error: {e}"
+
+
+@mcp.tool(
+    name="zotero_move_items_to_collection",
+    description="Add or remove items from a Zotero collection."
+)
+def move_items_to_collection(
+    item_keys: list[str],
+    collection_key: str,
+    action: Literal["add", "remove"] = "add",
+    *,
+    ctx: Context,
+) -> str:
+    """
+    Add or remove items from a Zotero collection.
+
+    Args:
+        item_keys: List of item keys to move.
+        collection_key: Target collection key.
+        action: "add" to add items, "remove" to remove items.
+        ctx: MCP context.
+
+    Returns:
+        Per-item result summary.
+    """
+    try:
+        zot = get_web_zotero_client()
+        if zot is None:
+            return "Error: Web API credentials not configured."
+
+        results = []
+        for key in item_keys:
+            try:
+                item = zot.item(key)
+                if action == "add":
+                    zot.addto_collection(collection_key, item)
+                    results.append(f"✓ {key} added to {collection_key}")
+                else:
+                    zot.deletefrom_collection(collection_key, item)
+                    results.append(f"✓ {key} removed from {collection_key}")
+            except Exception as e:
+                results.append(f"✗ {key}: {e}")
+
+        return "\n".join(results)
+    except Exception as e:
+        ctx.error(f"Error in move_items_to_collection: {e}")
+        return f"Error: {e}"
+
+
+@mcp.tool(
+    name="zotero_update_collection",
+    description="Rename a Zotero collection or change its parent."
+)
+def update_collection(
+    collection_key: str,
+    name: str | None = None,
+    parent_key: str | None = None,
+    *,
+    ctx: Context,
+) -> str:
+    """
+    Update a Zotero collection's name or parent.
+
+    Args:
+        collection_key: Key of the collection to update.
+        name: New name for the collection (omit to keep current).
+        parent_key: New parent collection key (omit to keep current; use "" to make top-level).
+        ctx: MCP context.
+
+    Returns:
+        Confirmation message.
+    """
+    try:
+        zot = get_web_zotero_client()
+        if zot is None:
+            return "Error: Web API credentials not configured."
+
+        ctx.info(f"Fetching collection {collection_key}")
+        col = zot.collection(collection_key)
+        data = col.get("data", {})
+
+        changed = []
+        if name is not None:
+            data["name"] = name
+            changed.append(f"name → {name!r}")
+        if parent_key is not None:
+            data["parentCollection"] = parent_key or False
+            changed.append(f"parentCollection → {parent_key!r}")
+
+        if not changed:
+            return "Nothing to update."
+
+        col["data"] = data
+        zot.update_collection(col)
+        return f"✓ Collection {collection_key} updated: {', '.join(changed)}"
+    except Exception as e:
+        ctx.error(f"Error in update_collection: {e}")
+        return f"Error: {e}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Write Tools — Group D: Deletion
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool(
+    name="zotero_delete_items",
+    description="Move one or more Zotero items to trash. Items can be restored from the Zotero trash."
+)
+def delete_items(
+    item_keys: list[str],
+    *,
+    ctx: Context,
+) -> str:
+    """
+    Move Zotero items to trash (not permanent deletion).
+
+    Args:
+        item_keys: List of item keys to trash.
+        ctx: MCP context.
+
+    Returns:
+        Per-item result summary.
+    """
+    try:
+        zot = get_web_zotero_client()
+        if zot is None:
+            return "Error: Web API credentials not configured."
+
+        results = []
+        for key in item_keys:
+            try:
+                item = zot.item(key)
+                zot.delete_item(item)
+                results.append(f"✓ {key} moved to trash")
+            except Exception as e:
+                results.append(f"✗ {key}: {e}")
+
+        return "\n".join(results)
+    except Exception as e:
+        ctx.error(f"Error in delete_items: {e}")
+        return f"Error: {e}"
