@@ -40,6 +40,10 @@ This is a personal fork. The main additions over the upstream repo:
 | `zotero_find_and_attach_pdfs` | Find OA PDFs for existing items via Unpaywall and attach them |
 | `zotero_add_linked_url_attachment` | Add a linked URL attachment to an existing item |
 
+### 🔄 Auto-Detect Local vs Web API
+
+No need to set `ZOTERO_LOCAL` manually. When unset, the server tries the local Zotero desktop first and falls back to the Web API automatically. Set `ZOTERO_LOCAL=true/false` only to force a specific mode.
+
 ### 🔑 Auto-Load Credentials from AI Tool Configs
 
 If `ZOTERO_API_KEY` / `ZOTERO_LIBRARY_ID` are already set in your MCP client config, the server picks them up automatically — no separate `.env` file needed:
@@ -152,8 +156,10 @@ Or set environment variables directly:
 ```bash
 export ZOTERO_API_KEY=your_api_key
 export ZOTERO_LIBRARY_ID=your_library_id
-# Keep local API for reads while using web API for writes:
-export ZOTERO_LOCAL=true
+# Optional: set UNPAYWALL_EMAIL to enable OA PDF auto-attach
+export UNPAYWALL_EMAIL=your_email@example.com
+# Optional: set UNSAFE_OPERATIONS to enable delete tools
+export UNSAFE_OPERATIONS=all
 ```
 
 > **Auto-loading**: If you use Claude Code, OpenCode, or Codex CLI, credentials already set in your MCP config are loaded automatically — no separate setup needed. See [Advanced Configuration](#-advanced-configuration) for details.
@@ -241,12 +247,17 @@ After installation, either:
        "zotero": {
          "command": "zotero-mcp",
          "env": {
-           "ZOTERO_LOCAL": "true"
+           "ZOTERO_API_KEY": "your_api_key",
+           "ZOTERO_LIBRARY_ID": "your_library_id",
+           "ZOTERO_LIBRARY_TYPE": "user",
+           "UNPAYWALL_EMAIL": "your_email@example.com",
+           "UNSAFE_OPERATIONS": "all"
          }
        }
      }
    }
    ```
+   `ZOTERO_API_KEY` and `ZOTERO_LIBRARY_ID` are required for write tools. The server auto-detects local vs web — no need to set `ZOTERO_LOCAL`.
 
 #### Usage
 
@@ -282,7 +293,11 @@ Go to Settings -> MCP Servers -> Edit MCP Configuration, and add the following:
       "command": "zotero-mcp",
       "args": [],
       "env": {
-        "ZOTERO_LOCAL": "true"
+        "ZOTERO_API_KEY": "your_api_key",
+        "ZOTERO_LIBRARY_ID": "your_library_id",
+        "ZOTERO_LIBRARY_TYPE": "user",
+        "UNPAYWALL_EMAIL": "your_email@example.com",
+        "UNSAFE_OPERATIONS": "all"
       }
     }
   }
@@ -317,7 +332,7 @@ Environment variables already set in the shell always take precedence.
 ### Environment Variables
 
 **Zotero Connection:**
-- `ZOTERO_LOCAL=true`: Use the local Zotero API (default: false)
+- `ZOTERO_LOCAL`: `true` = always use local Zotero desktop; `false` = always use Web API; unset = auto-detect (tries local first, falls back to web)
 - `ZOTERO_API_KEY`: Your Zotero API key (for web API)
 - `ZOTERO_LIBRARY_ID`: Your Zotero library ID (for web API)
 - `ZOTERO_LIBRARY_TYPE`: The type of library (user or group, default: user)
