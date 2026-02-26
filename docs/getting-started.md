@@ -184,24 +184,73 @@ zotero-mcp serve --transport sse --host localhost --port 8000
 
 When connected to Claude Desktop or another MCP client, you'll have access to these tools:
 
+### Read Tools
 - **zotero_search_items**: Search your library by title, creator, or content
-- **zotero_get_item_metadata**: Get detailed information about a specific item
+- **zotero_advanced_search**: Complex multi-criteria search
+- **zotero_search_by_tag**: Filter items by one or more tags
+- **zotero_get_item_metadata**: Get detailed information about a specific item (supports BibTeX via `format="bibtex"`)
 - **zotero_get_item_fulltext**: Get the full text content of an item
 - **zotero_get_collections**: List all collections in your library
 - **zotero_get_collection_items**: Get all items in a specific collection
 - **zotero_get_item_children**: Get child items (attachments, notes) for a specific item
 - **zotero_get_tags**: Get all tags used in your library
 - **zotero_get_recent**: Get recently added items to your library
+- **zotero_get_annotations**: Extract PDF/EPUB annotations
+- **zotero_get_notes** / **zotero_search_notes**: Retrieve and search notes
+- **zotero_semantic_search**: AI-powered similarity search (requires database setup)
+
+### Write Tools (require Web API credentials)
+
+> These tools need `ZOTERO_API_KEY` and `ZOTERO_LIBRARY_ID` set. The local API is read-only.
+
+**Import**
+- **zotero_add_items_by_doi**: Import papers by DOI — metadata fetched from CrossRef automatically
+- **zotero_add_items_by_arxiv**: Import preprints by arXiv ID (bare ID, `arXiv:` prefix, full URL, or DOI prefix all accepted)
+- **zotero_add_item_by_url**: Save a webpage — title extracted from `og:title` or `<title>`
+
+**Edit**
+- **zotero_create_note**: Create a new note attached to an item
+- **zotero_update_item**: Update any field on an existing item
+- **zotero_update_note**: Replace the HTML content of an existing note
+- **zotero_batch_update_tags**: Add or remove tags across multiple items at once
+
+**Collections**
+- **zotero_create_collection**: Create a new top-level or nested collection
+- **zotero_move_items_to_collection**: Add or remove items from a collection
+- **zotero_update_collection**: Rename a collection or change its parent
+- **zotero_delete_collection**: Permanently delete a collection (items inside are kept)
+
+**Deletion**
+- **zotero_delete_items**: Move items to trash (recoverable)
 
 ## Example Queries
 
 Once connected, you can ask Claude questions like:
 
+**Reading your library**
 - "Search my Zotero library for papers about machine learning"
 - "Find articles by Smith in my Zotero library"
 - "Show me my most recent additions to Zotero"
 - "What collections do I have in my Zotero library?"
 - "Get the full text of paper XYZ from my Zotero library"
+- "Find papers conceptually similar to deep learning in computer vision" *(semantic search)*
+
+**Importing new items** *(requires Web API)*
+- "Add the paper with DOI 10.1038/s41586-021-03819-2 to my library"
+- "Import arXiv paper 2301.12345 into my Zotero library"
+- "Save this webpage to my Zotero library: https://example.com/article"
+- "Add these three DOIs to my 'Reading List' collection: ..."
+
+**Organizing your library** *(requires Web API)*
+- "Create a new collection called 'NeurIPS 2024' under 'Conferences'"
+- "Move all papers tagged 'to-read' into the 'Reading List' collection"
+- "Rename the collection 'Old Papers' to 'Archive'"
+- "Add the tag 'important' to all papers matching 'transformer architecture'"
+- "Delete the empty collection 'Temp'"
+
+**Editing items** *(requires Web API)*
+- "Update the abstract of paper ABC123 to: ..."
+- "Add a note to paper XYZ summarizing its key contributions"
 
 ## Troubleshooting
 
@@ -214,9 +263,11 @@ If you encounter issues:
 
 ### Local Library Limitations
 
-Some functionality will not work for local libraries due to the distinct differences with [Zotero's local JS API](https://www.zotero.org/support/dev/client_coding/javascript_api). For instance, tagging and other library modifications might not work as expected with the local API connection.
+Some functionality will not work for local libraries due to the distinct differences with [Zotero's local JS API](https://www.zotero.org/support/dev/client_coding/javascript_api).
 
-**Workaround**: Even without web storage, a workaround for some of these functionalities might be to set up a web library, point the MCP at that, and then things like setting tags should work properly. We're thinking about better ways to work with local instances in future updates.
+**Write tools are not available with local API.** All write operations (importing papers, creating/updating notes, managing collections, deleting items) require Web API credentials (`ZOTERO_API_KEY` + `ZOTERO_LIBRARY_ID`). The local API at port 23119 is read-only.
+
+**Workaround**: Configure the Web API credentials alongside your local setup. You can keep `ZOTERO_LOCAL=true` for read operations while also setting `ZOTERO_API_KEY` and `ZOTERO_LIBRARY_ID` — the write tools will automatically use the web client.
 
 ### Database Issues
 

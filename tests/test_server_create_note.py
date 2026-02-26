@@ -27,6 +27,7 @@ class FakeZotero:
 def test_create_note_includes_title_heading(monkeypatch):
     fake_zot = FakeZotero()
     monkeypatch.setattr(server, "get_zotero_client", lambda: fake_zot)
+    monkeypatch.setattr(server, "get_web_zotero_client", lambda: fake_zot)
 
     result = server.create_note(
         item_key="ITEM0001",
@@ -37,6 +38,7 @@ def test_create_note_includes_title_heading(monkeypatch):
     )
 
     assert "Successfully created note" in result
+    assert "NOTEKEY01" in result  # real key from success values, not index "0"
     assert len(fake_zot.created) == 1
     note_html = fake_zot.created[0]["note"]
     assert note_html.startswith("<h1>&lt;Unsafe Title&gt;</h1>")

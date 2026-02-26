@@ -13,12 +13,50 @@
   <a href="https://modelcontextprotocol.io/introduction">
     <img src="https://img.shields.io/badge/MCP-0175C2?style=for-the-badge&logoColor=white" alt="MCP">
   </a>
-  <a href="https://pypi.org/project/zotero-mcp-server/">
-    <img src="https://img.shields.io/pypi/v/zotero-mcp-server?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI">
-  </a>
 </p>
 
 **Zotero MCP** seamlessly connects your [Zotero](https://www.zotero.org/) research library with [ChatGPT](https://openai.com), [Claude](https://www.anthropic.com/claude), and other AI assistants (e.g., [Cherry Studio](https://cherry-ai.com/), [Chorus](https://chorus.sh), [Cursor](https://www.cursor.com/)) via the [Model Context Protocol](https://modelcontextprotocol.io/introduction). Review papers, get summaries, analyze citations, extract PDF annotations, and more!
+
+---
+
+## 🔀 Fork Changes (vs [54yyyu/zotero-mcp](https://github.com/54yyyu/zotero-mcp))
+
+This is a personal fork. The main additions over the upstream repo:
+
+### ✍️ 10 New Write Tools (require Web API credentials)
+
+| Tool | What it does |
+|------|-------------|
+| `zotero_add_items_by_doi` | Import papers by DOI — metadata fetched from CrossRef |
+| `zotero_add_items_by_arxiv` | Import preprints by arXiv ID, URL, or DOI prefix |
+| `zotero_add_item_by_url` | Save a webpage as a Zotero item |
+| `zotero_update_item` | Update any field on an existing item |
+| `zotero_update_note` | Replace the HTML content of an existing note |
+| `zotero_create_collection` | Create a top-level or nested collection |
+| `zotero_move_items_to_collection` | Add or remove items from a collection |
+| `zotero_update_collection` | Rename a collection or change its parent |
+| `zotero_delete_collection` | Delete a collection (items inside are kept) |
+| `zotero_delete_items` | Move items to trash (recoverable) |
+
+### 🔑 Auto-Load Credentials from AI Tool Configs
+
+If `ZOTERO_API_KEY` / `ZOTERO_LIBRARY_ID` are already set in your MCP client config, the server picks them up automatically — no separate `.env` file needed:
+
+| Tool | Config file | Key path |
+|------|-------------|----------|
+| Claude Code | `~/.claude/settings.json` | `mcpServers.zotero.env` |
+| OpenCode | `~/opencode.jsonc` | `mcp.servers.zotero.env` |
+| Codex CLI | `~/.codex/config.toml` | `mcp_servers.zotero.env` |
+
+### 🐛 Bug Fix
+
+- **`zotero_create_note`** — was returning `"0"` as the new item key; now returns the correct key
+
+### 🗑️ Removed
+
+- **`zotero_create_annotation`** — removed (unreliable with the local API)
+
+---
 
 ## ✨ Features
 
@@ -39,10 +77,18 @@
 - Get full text content (when available)
 - Access attachments, notes, and child items
 
-### 📝 Work with Annotations
+### 📝 Work with Annotations & Notes
 - Extract and search PDF annotations directly
 - Access Zotero's native annotations
-- Create and update notes and annotations
+- Create and update notes
+
+### ✍️ Write & Organize Your Library
+- **Import papers** by DOI, arXiv ID, or URL — metadata fetched automatically
+- **Update items** — edit any field on existing library entries
+- **Manage collections** — create, rename, re-parent, and delete collections
+- **Move items** — add or remove items from collections in bulk
+- **Delete items** — move items to trash (recoverable)
+- **Batch tag** — add or remove tags across multiple items at once
 
 ### 🔄 Easy Updates
 - **Smart update system** that detects your installation method (uv, pip, conda, pipx)
@@ -61,21 +107,21 @@
 #### Installing via uv (recommended)
 
 ```bash
-uv tool install zotero-mcp-server
+uv tool install git+https://github.com/Galaxy-Dawn/zotero-mcp.git
 zotero-mcp setup  # Auto-configure (Claude Desktop supported)
 ```
 
 #### Installing via pip
 
 ```bash
-pip install zotero-mcp-server
+pip install git+https://github.com/Galaxy-Dawn/zotero-mcp.git
 zotero-mcp setup  # Auto-configure (Claude Desktop supported)
 ```
 
 #### Installing via pipx
 
 ```bash
-pipx install zotero-mcp-server
+pipx install git+https://github.com/Galaxy-Dawn/zotero-mcp.git
 zotero-mcp setup  # Auto-configure (Claude Desktop supported)
 ```
 
@@ -90,6 +136,25 @@ zotero-mcp update --check-only
 # Update to latest version (preserves all configurations)
 zotero-mcp update
 ```
+
+### Enable Write Tools (Optional)
+
+Read-only tools work out of the box with the local API. To unlock **import, edit, and collection management** tools, add your Zotero Web API credentials:
+
+```bash
+zotero-mcp setup --no-local --api-key YOUR_API_KEY --library-id YOUR_LIBRARY_ID
+```
+
+Or set environment variables directly:
+
+```bash
+export ZOTERO_API_KEY=your_api_key
+export ZOTERO_LIBRARY_ID=your_library_id
+# Keep local API for reads while using web API for writes:
+export ZOTERO_LOCAL=true
+```
+
+> **Auto-loading**: If you use Claude Code, OpenCode, or Codex CLI, credentials already set in your MCP config are loaded automatically — no separate setup needed. See [Advanced Configuration](#-advanced-configuration) for details.
 
 ## 🧠 Semantic Search
 
@@ -148,8 +213,6 @@ zotero-mcp db-status
 The semantic search provides similarity scores and finds papers based on conceptual understanding, not just keyword matching.
 
 ## 🖥️ Setup & Usage
-
-Full documentation is available at [Zotero MCP docs](https://stevenyuyy.us/zotero-mcp/).
 
 **Requirements**
 - Python 3.10+
@@ -236,6 +299,18 @@ For accessing your Zotero library via the web API (useful for remote setups):
 ```bash
 zotero-mcp setup --no-local --api-key YOUR_API_KEY --library-id YOUR_LIBRARY_ID
 ```
+
+### Auto-Loading Credentials from AI Tool Configs
+
+If you have Zotero credentials configured in your AI tool's MCP settings, the server will load them automatically — no separate `.env` file needed:
+
+| Tool | Config file | Key path |
+|------|-------------|----------|
+| Claude Code | `~/.claude/settings.json` | `mcpServers.zotero.env` |
+| OpenCode | `~/opencode.jsonc` | `mcp.servers.zotero.env` |
+| Codex CLI | `~/.codex/config.toml` | `mcp_servers.zotero.env` |
+
+Environment variables already set in the shell always take precedence.
 
 ### Environment Variables
 
@@ -325,7 +400,34 @@ The first time you use PDF annotation features, the necessary tools will be auto
 - `zotero_get_annotations`: Get annotations (including direct PDF extraction)
 - `zotero_get_notes`: Retrieve notes from your Zotero library
 - `zotero_search_notes`: Search in notes and annotations (including PDF-extracted)
-- `zotero_create_note`: Create a new note for an item (beta feature)
+- `zotero_create_note`: Create a new note for an item
+
+### ✍️ Write Tools (require Web API credentials)
+
+**Import**
+- `zotero_add_items_by_doi`: Import papers by DOI — fetches metadata from CrossRef automatically
+- `zotero_add_items_by_arxiv`: Import preprints by arXiv ID (bare ID, `arXiv:` prefix, full URL, or DOI prefix all accepted)
+- `zotero_add_item_by_url`: Save a webpage as a Zotero item — title extracted from `og:title` or `<title>`
+
+**Edit**
+- `zotero_update_item`: Update any field on an existing library item
+- `zotero_update_note`: Replace the HTML content of an existing note
+
+**Collections**
+- `zotero_create_collection`: Create a new top-level or nested collection
+- `zotero_move_items_to_collection`: Add or remove items from a collection
+- `zotero_update_collection`: Rename a collection or change its parent
+- `zotero_delete_collection`: Permanently delete a collection (items inside are kept)
+
+**Deletion**
+- `zotero_delete_items`: Move one or more items to trash (recoverable)
+
+### 🏷️ Tag & Library Tools
+- `zotero_batch_update_tags`: Add or remove tags across multiple items matching a query
+- `zotero_list_libraries`: List all accessible libraries (user, group, RSS feeds)
+- `zotero_switch_library`: Switch the active library context for all subsequent calls
+- `zotero_list_feeds`: List RSS feed subscriptions (local mode only)
+- `zotero_get_feed_items`: Get items from a specific RSS feed (local mode only)
 
 ## 🔍 Troubleshooting
 
@@ -347,14 +449,6 @@ The first time you use PDF annotation features, the necessary tools will be auto
 ### Update Issues
 - **Update command fails**: Check your internet connection and try `zotero-mcp update --force`
 - **Configuration lost after update**: The update process preserves configs automatically, but check `~/.config/zotero-mcp/` for backup files
-
-## ☕ Support
-
-If you find Zotero MCP useful, consider buying me a coffee!
-
-<a href="https://buymeacoffee.com/stevenyuyy">
-  <img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee">
-</a>
 
 ## 📄 License
 

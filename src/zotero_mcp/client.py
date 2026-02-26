@@ -56,7 +56,7 @@ def _load_from_ai_tool_configs() -> None:
                 import tomllib
             except ImportError:
                 import tomli as tomllib  # type: ignore[no-redef]
-            d = tomllib.loads(p.read_bytes())
+            d = tomllib.loads(p.read_text())
             env = d.get("mcp_servers", {}).get("zotero", {}).get("env", {})
             if env:
                 candidates.append(env)
