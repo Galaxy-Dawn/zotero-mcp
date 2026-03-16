@@ -22,6 +22,39 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+def _normalize_version_str(v: str) -> str:
+    """Normalize version strings (e.g., strip a leading 'v')."""
+    return v.strip().lstrip("v").strip()
+
+
+def _is_newer_version_available(current_version: str, latest_version: str) -> bool:
+    """
+    Return True if `latest_version` is strictly newer than `current_version`.
+
+    This intentionally avoids suggesting a downgrade when the current version is
+    ahead of what's available on PyPI / upstream GitHub releases (common when
+    installed from a fork or a git URL).
+    """
+    cur = _normalize_version_str(current_version)
+    lat = _normalize_version_str(latest_version)
+
+    try:
+        from packaging.version import Version  # type: ignore[import-not-found]
+
+        return Version(lat) > Version(cur)
+    except Exception:
+        # Very small fallback for environments without `packaging`.
+        def _as_tuple(s: str) -> tuple[int, ...]:
+            parts = []
+            for p in s.split("."):
+                try:
+                    parts.append(int(p))
+                except Exception:
+                    break
+            return tuple(parts)
+
+        return _as_tuple(lat) > _as_tuple(cur)
+
 
 def _is_uv_tool_installation() -> bool:
     """Check if zotero-mcp is currently installed as a uv tool."""
@@ -435,11 +468,12 @@ def update_zotero_mcp(check_only: bool = False,
         return result
 
     # Check if update is needed
-    needs_update = current_version != latest_version or force
+    needs_update = _is_newer_version_available(current_version, latest_version) or force
     result["needs_update"] = needs_update
 
     if not needs_update and not force:
         result["success"] = True
+        # If current is ahead of latest (e.g., installed from git), don't suggest a downgrade.
         result["message"] = f"Already up to date (version {current_version})"
         return result
 
