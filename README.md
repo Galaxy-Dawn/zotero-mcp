@@ -117,6 +117,12 @@ uv tool install git+https://github.com/Galaxy-Dawn/zotero-mcp.git
 zotero-mcp setup  # Auto-configure (Claude Desktop supported)
 ```
 
+If you already installed zotero-mcp before and want the latest GitHub version, reinstall it explicitly:
+
+```bash
+uv tool install --reinstall git+https://github.com/Galaxy-Dawn/zotero-mcp.git
+```
+
 #### Installing via pip
 
 ```bash
@@ -141,6 +147,12 @@ zotero-mcp update --check-only
 
 # Update to latest version (preserves all configurations)
 zotero-mcp update
+```
+
+For users who installed directly from the GitHub repository via `uv tool install`, you can also refresh to the latest GitHub version with:
+
+```bash
+uv tool install --reinstall git+https://github.com/Galaxy-Dawn/zotero-mcp.git
 ```
 
 ### Enable Write Tools (Optional)
