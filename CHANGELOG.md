@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-03-16
+
+### Changed
+- Release refresh to re-run GitHub Actions tag publishing with a token that has `workflow` scope.
+
 ## [0.1.6] - 2026-03-16
 
 ### Fixed
