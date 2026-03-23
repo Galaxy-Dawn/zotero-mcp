@@ -40,6 +40,9 @@ dev = [
     "black>=23.0.0",
     "isort>=5.12.0",
 ]
+browser = [
+    "playwright>=1.54.0",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/54yyyu/zotero-mcp"

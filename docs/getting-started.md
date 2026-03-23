@@ -204,11 +204,18 @@ When connected to Claude Desktop or another MCP client, you'll have access to th
 > These tools need `ZOTERO_API_KEY` and `ZOTERO_LIBRARY_ID` set. The local API is read-only.
 
 **Import**
-- **zotero_add_items_by_doi**: Import papers by DOI — metadata fetched from CrossRef automatically
-- **zotero_add_items_by_arxiv**: Import preprints by arXiv ID (bare ID, `arXiv:` prefix, full URL, or DOI prefix all accepted)
-- **zotero_add_item_by_url**: Save a webpage — title extracted from `og:title` or `<title>`
-- **zotero_find_and_attach_pdfs**: Find and attach OA PDFs for existing items via Unpaywall (requires `UNPAYWALL_EMAIL`)
+- **zotero_add_items_by_identifier**: **Default paper-import entrypoint**. Accepts DOI, arXiv, landing-page URLs, or direct PDF URLs
+- **zotero_add_items_by_doi**: Compatibility wrapper for DOI-only workflows
+- **zotero_add_items_by_arxiv**: Compatibility wrapper for arXiv-only workflows
+- **zotero_add_item_by_url**: Compatibility wrapper for pure webpage saves
+- **zotero_find_and_attach_pdfs**: Re-run the PDF cascade for existing items; Unpaywall fallback still needs `UNPAYWALL_EMAIL`
 - **zotero_add_linked_url_attachment**: Add a linked URL attachment to an existing item
+
+> Recommendation: for new integrations and prompts, default to `zotero_add_items_by_identifier`. Keep the DOI/arXiv/URL-specific tools only for backward compatibility or explicitly constrained workflows. Collection-level dedupe remains available as a maintenance tool, while the import ledger still exists as internal state and can be relocated with `ZOTERO_MCP_IMPORT_LEDGER_PATH`.
+>
+> By default, import output is simplified for end users: it reports whether the item was imported as a paper or webpage, and whether the PDF was attached. If you need implementation details during debugging, set `ZOTERO_MCP_DEBUG_IMPORT=1` before starting the server.
+>
+> Optional browser-assisted PDF rescue is available for cookie-gated publisher PDFs. Install the browser extra (`uv pip install '.[browser]'` or `pip install 'zotero-mcp-server[browser]'`), then run `python -m playwright install chromium`. If you want Playwright to reuse a persistent browser profile, set `ZOTERO_MCP_PLAYWRIGHT_USER_DATA_DIR`. You can also adjust `ZOTERO_MCP_PLAYWRIGHT_CHANNEL`, `ZOTERO_MCP_PLAYWRIGHT_HEADLESS`, and `ZOTERO_MCP_PLAYWRIGHT_PDF_TIMEOUT_SEC`.
 
 **Edit**
 - **zotero_create_note**: Create a new note attached to an item
@@ -221,6 +228,7 @@ When connected to Claude Desktop or another MCP client, you'll have access to th
 - **zotero_move_items_to_collection**: Add or remove items from a collection
 - **zotero_update_collection**: Rename a collection or change its parent
 - **zotero_delete_collection**: Permanently delete a collection (items inside are kept)
+- **zotero_reconcile_collection_duplicates**: Dedupe a collection, merge memberships onto a canonical item, and optionally repair missing PDFs
 
 **Deletion**
 - **zotero_delete_items**: Move items to trash (recoverable)
@@ -238,10 +246,10 @@ Once connected, you can ask Claude questions like:
 - "Find papers conceptually similar to deep learning in computer vision" *(semantic search)*
 
 **Importing new items** *(requires Web API)*
-- "Add the paper with DOI 10.1038/s41586-021-03819-2 to my library"
-- "Import arXiv paper 2301.12345 into my Zotero library"
-- "Save this webpage to my Zotero library: https://example.com/article"
-- "Add these three DOIs to my 'Reading List' collection: ..."
+- "Import this paper into Zotero: 10.1038/s41586-021-03819-2"
+- "Import this paper into Zotero: 2301.12345"
+- "Import this paper into Zotero: https://example.com/article"
+- "Import these papers into my 'Reading List' collection: DOI1, DOI2, DOI3"
 
 **Organizing your library** *(requires Web API)*
 - "Create a new collection called 'NeurIPS 2024' under 'Conferences'"
