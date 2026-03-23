@@ -127,7 +127,7 @@ def find_claude_config():
     print(f"Claude Desktop config not found. Using default path: {default_path}")
     return default_path
 
-def setup_semantic_search(existing_semantic_config: dict = None, semantic_config_only_arg: bool = False) -> dict:
+def setup_semantic_search(existing_semantic_config: dict | None = None, semantic_config_only_arg: bool = False) -> dict:
     """Interactive setup for semantic search configuration."""
     print("\n=== Semantic Search Configuration ===")
 
@@ -253,7 +253,8 @@ def setup_semantic_search(existing_semantic_config: dict = None, semantic_config
     elif update_choice == "3":
         update_config = {
             "auto_update": True,
-            "update_frequency": "daily"
+            "update_frequency": "daily",
+            "update_days": None
         }
         print("Database will be updated once per day.")
     elif update_choice == "4":

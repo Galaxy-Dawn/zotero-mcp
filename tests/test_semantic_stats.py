@@ -14,6 +14,7 @@ from zotero_mcp import semantic_search
 class FakeChromaClient:
     def __init__(self):
         self.upserted_ids = []
+        self.embedding_max_tokens = 8000
 
     def get_existing_ids(self, ids):
         # Pretend item A already exists and item B is new.
@@ -21,6 +22,9 @@ class FakeChromaClient:
 
     def upsert_documents(self, documents, metadatas, ids):
         self.upserted_ids.extend(ids)
+
+    def truncate_text(self, text, max_tokens=None):
+        return text
 
 
 def test_process_item_batch_tracks_added_vs_updated(monkeypatch):

@@ -7,35 +7,23 @@ for semantic search over Zotero libraries.
 
 import json
 import os
-import sys
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any
 import logging
-
-from typing import Dict
 
 import chromadb
 from chromadb import Documents, EmbeddingFunction, Embeddings
 from chromadb.config import Settings
 
+from zotero_mcp.utils import suppress_stdout
+
 logger = logging.getLogger(__name__)
-
-
-@contextmanager
-def suppress_stdout():
-    """Context manager to suppress stdout temporarily."""
-    with open(os.devnull, 'w') as devnull:
-        old_stdout = sys.stdout
-        sys.stdout = devnull
-        try:
-            yield
-        finally:
-            sys.stdout = old_stdout
 
 
 class OpenAIEmbeddingFunction(EmbeddingFunction):
     """Custom OpenAI embedding function for ChromaDB."""
+
+    max_input_tokens = 8000  # text-embedding-3-* limit is 8191
 
     def __init__(self, model_name: str = "text-embedding-3-small", api_key: str | None = None, base_url: str | None = None):
         self.model_name = model_name
@@ -57,11 +45,11 @@ class OpenAIEmbeddingFunction(EmbeddingFunction):
     def name() -> str:
         return "openai"
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         return {"model_name": self.model_name, "base_url": self.base_url}
 
     @staticmethod
-    def build_from_config(config: Dict[str, Any]) -> "OpenAIEmbeddingFunction":
+    def build_from_config(config: dict[str, Any]) -> "OpenAIEmbeddingFunction":
         return OpenAIEmbeddingFunction(
             model_name=config.get("model_name", "text-embedding-3-small"),
             base_url=config.get("base_url"),
@@ -75,9 +63,31 @@ class OpenAIEmbeddingFunction(EmbeddingFunction):
         )
         return [data.embedding for data in response.data]
 
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a query string. No special handling needed for OpenAI."""
+        return self.__call__([text])[0]
+
+    def truncate(self, text: str, max_tokens: int) -> str:
+        """Truncate using tiktoken cl100k_base (correct for OpenAI models)."""
+        try:
+            import tiktoken
+            if not hasattr(self, '_tokenizer'):
+                self._tokenizer = tiktoken.get_encoding("cl100k_base")
+            tokens = self._tokenizer.encode(text)
+            if len(tokens) > max_tokens:
+                tokens = tokens[:max_tokens]
+                text = self._tokenizer.decode(tokens)
+        except ImportError:
+            max_chars = max_tokens * 3
+            if len(text) > max_chars:
+                text = text[:max_chars]
+        return text
+
 
 class GeminiEmbeddingFunction(EmbeddingFunction):
     """Custom Gemini embedding function for ChromaDB using google-genai."""
+
+    max_input_tokens = 2000  # gemini-embedding-001 limit is 2048
 
     def __init__(self, model_name: str = "gemini-embedding-001", api_key: str | None = None, base_url: str | None = None):
         self.model_name = model_name
@@ -102,11 +112,11 @@ class GeminiEmbeddingFunction(EmbeddingFunction):
     def name() -> str:
         return "gemini"
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         return {"model_name": self.model_name, "base_url": self.base_url}
 
     @staticmethod
-    def build_from_config(config: Dict[str, Any]) -> "GeminiEmbeddingFunction":
+    def build_from_config(config: dict[str, Any]) -> "GeminiEmbeddingFunction":
         return GeminiEmbeddingFunction(
             model_name=config.get("model_name", "gemini-embedding-001"),
             base_url=config.get("base_url"),
@@ -127,6 +137,24 @@ class GeminiEmbeddingFunction(EmbeddingFunction):
             embeddings.append(response.embeddings[0].values)
         return embeddings
 
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a query string using retrieval_query task type."""
+        response = self.client.models.embed_content(
+            model=self.model_name,
+            contents=[text],
+            config=self.types.EmbedContentConfig(
+                task_type="retrieval_query",
+            )
+        )
+        return response.embeddings[0].values
+
+    def truncate(self, text: str, max_tokens: int) -> str:
+        """Truncate using character-based estimation for Gemini (~4 chars/token)."""
+        max_chars = max_tokens * 4
+        if len(text) > max_chars:
+            text = text[:max_chars]
+        return text
+
 
 class HuggingFaceEmbeddingFunction(EmbeddingFunction):
     """Custom HuggingFace embedding function for ChromaDB using sentence-transformers."""
@@ -141,15 +169,18 @@ class HuggingFaceEmbeddingFunction(EmbeddingFunction):
         except ImportError:
             raise ImportError("sentence-transformers package is required for HuggingFace embeddings. Install with: pip install sentence-transformers")
 
+        # Read limit from model metadata; conservative fallback
+        self.max_input_tokens = getattr(self.model, "max_seq_length", 500)
+
     @staticmethod
     def name() -> str:
         return "huggingface"
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         return {"model_name": self.model_name}
 
     @staticmethod
-    def build_from_config(config: Dict[str, Any]) -> "HuggingFaceEmbeddingFunction":
+    def build_from_config(config: dict[str, Any]) -> "HuggingFaceEmbeddingFunction":
         return HuggingFaceEmbeddingFunction(
             model_name=config.get("model_name", "Qwen/Qwen3-Embedding-0.6B"),
         )
@@ -158,6 +189,24 @@ class HuggingFaceEmbeddingFunction(EmbeddingFunction):
         """Generate embeddings using HuggingFace model."""
         embeddings = self.model.encode(input, convert_to_numpy=True)
         return embeddings.tolist()
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a query string. No special handling needed for HuggingFace."""
+        return self.__call__([text])[0]
+
+    def truncate(self, text: str, max_tokens: int) -> str:
+        """Truncate using the model's own tokenizer."""
+        tokenizer = getattr(self.model, 'tokenizer', None)
+        if tokenizer is not None:
+            encoded = tokenizer.encode(text, add_special_tokens=False)
+            if len(encoded) > max_tokens:
+                encoded = encoded[:max_tokens]
+                text = tokenizer.decode(encoded)
+        else:
+            max_chars = max_tokens * 2
+            if len(text) > max_chars:
+                text = text[:max_chars]
+        return text
 
 
 class ChromaClient:
@@ -205,13 +254,41 @@ class ChromaClient:
 
             # Get or create collection with the configured embedding function.
             # If the user switched embedding models, the persisted collection
-            # will conflict with the new function.  Drop and recreate in that
-            # case so the database is rebuilt with the correct embeddings.
+            # will have stale config.  Detect the mismatch and drop/recreate.
             try:
                 self.collection = self.client.get_or_create_collection(
                     name=self.collection_name,
                     embedding_function=self.embedding_function
                 )
+
+                # ChromaDB may silently persist the old embedding function config.
+                # Check if the stored config matches what we want; if not, recreate.
+                stored_config = getattr(self.collection, 'metadata', {}) or {}
+                if not stored_config:
+                    # Try reading config from the collection's config_json_str
+                    try:
+                        import json as _json
+                        rows = self.client._sysdb.get_collections(name=self.collection_name)
+                        if rows:
+                            raw = getattr(rows[0], 'config_json_str', None) or '{}'
+                            cfg = _json.loads(raw)
+                            ef_cfg = cfg.get('embedding_function', {}).get('config', {})
+                            stored_model = ef_cfg.get('model_name', '')
+                            # Compare stored model with configured model
+                            configured_model = getattr(self.embedding_function, 'model_name', None)
+                            if stored_model and configured_model and stored_model != configured_model:
+                                logger.warning(
+                                    f"Stored embedding model '{stored_model}' differs from "
+                                    f"configured '{configured_model}'. Resetting collection."
+                                )
+                                self.client.delete_collection(name=self.collection_name)
+                                self.collection = self.client.create_collection(
+                                    name=self.collection_name,
+                                    embedding_function=self.embedding_function
+                                )
+                    except Exception:
+                        pass  # Best-effort check; proceed with existing collection
+
             except Exception as e:
                 if "embedding function conflict" in str(e).lower():
                     logger.warning(
@@ -254,7 +331,38 @@ class ChromaClient:
 
         else:
             # Use ChromaDB's default embedding function (all-MiniLM-L6-v2)
-            return chromadb.utils.embedding_functions.DefaultEmbeddingFunction()
+            ef = chromadb.utils.embedding_functions.DefaultEmbeddingFunction()
+            ef.max_input_tokens = 256  # all-MiniLM-L6-v2 max_seq_length
+            return ef
+
+    @property
+    def embedding_max_tokens(self) -> int:
+        """Maximum input tokens supported by the configured embedding model."""
+        return getattr(self.embedding_function, "max_input_tokens", 8000)
+
+    def truncate_text(self, text: str, max_tokens: int | None = None) -> str:
+        """Truncate text using the embedding function's model-aware tokenizer.
+
+        Falls back to tiktoken cl100k_base or character estimation if the
+        embedding function does not provide a truncate method.
+        """
+        if max_tokens is None:
+            max_tokens = self.embedding_max_tokens
+        if hasattr(self.embedding_function, 'truncate'):
+            return self.embedding_function.truncate(text, max_tokens)
+        # Fallback for default ChromaDB embedding function
+        try:
+            import tiktoken
+            enc = tiktoken.get_encoding("cl100k_base")
+            tokens = enc.encode(text)
+            if len(tokens) > max_tokens:
+                tokens = tokens[:max_tokens]
+                text = enc.decode(tokens)
+        except Exception:
+            max_chars = max_tokens * 2
+            if len(text) > max_chars:
+                text = text[:max_chars]
+        return text
 
     def add_documents(self,
                      documents: list[str],
@@ -320,12 +428,33 @@ class ChromaClient:
             Search results from ChromaDB
         """
         try:
-            results = self.collection.query(
-                query_texts=query_texts,
-                n_results=n_results,
-                where=where,
-                where_document=where_document
+            query_kwargs = {
+                "n_results": n_results,
+                "where": where,
+                "where_document": where_document,
+            }
+
+            # Use embed_query for our custom embedding functions that implement
+            # correct query-time task types (e.g. Gemini retrieval_query).
+            # Do NOT use embed_query on ChromaDB's DefaultEmbeddingFunction —
+            # its embed_query returns chunked results, not a single vector.
+            _is_custom_ef = isinstance(
+                self.embedding_function,
+                (OpenAIEmbeddingFunction, GeminiEmbeddingFunction, HuggingFaceEmbeddingFunction),
             )
+            if _is_custom_ef and hasattr(self.embedding_function, 'embed_query') and query_texts:
+                query_embeddings = []
+                for qt in query_texts:
+                    emb = self.embedding_function.embed_query(qt)
+                    # Ensure plain Python floats (some providers return numpy)
+                    if hasattr(emb, 'tolist'):
+                        emb = emb.tolist()
+                    query_embeddings.append(emb)
+                query_kwargs["query_embeddings"] = query_embeddings
+            else:
+                query_kwargs["query_texts"] = query_texts
+
+            results = self.collection.query(**query_kwargs)
             logger.info(f"Semantic search returned {len(results.get('ids', [[]])[0])} results")
             return results
         except Exception as e:

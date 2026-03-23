@@ -17,8 +17,25 @@ class DummyContext:
     def warning(self, *a, **kw): pass
 
 
+class _FakeResponse:
+    """Minimal httpx.Response stub used by merged upstream tests."""
+
+    def __init__(self, status_code, text=""):
+        self.status_code = status_code
+        self.text = text
+
+    @property
+    def is_success(self):
+        return 200 <= self.status_code < 300
+
+
 @pytest.fixture
 def ctx():
+    return DummyContext()
+
+
+@pytest.fixture
+def dummy_ctx():
     return DummyContext()
 
 
@@ -175,3 +192,7 @@ def patch_no_credentials(monkeypatch):
     """Simulate missing credentials (returns None)."""
     monkeypatch.setattr(server, "get_web_zotero_client", lambda: None)
     monkeypatch.setenv("UNSAFE_OPERATIONS", "all")
+
+
+# Compatibility aliases for upstream test modules
+FakeZotero = FakeWebZotero

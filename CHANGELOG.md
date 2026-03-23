@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-22
+
+### Fixed
+- **`create_annotation` crash** — fixed `_client._client.` double-indirection typo introduced in v0.2.0 refactor (#168).
+- **`attachments:` path resolution** — now reads `baseAttachmentPath` from Zotero's `prefs.js` instead of wrongly resolving against the storage directory (#169).
+
+## [0.2.0] - 2026-03-22
+
+### Architecture
+- **Split `server.py` (4,800 lines) into `tools/` subpackage** — search, retrieval, annotations, write, connectors, and shared helpers are now separate modules. `server.py` is a 109-line re-export shim.
+- **Removed `_ServerModule` sys.modules hack** — tool modules use module-level attribute access; tests patch canonical locations directly.
+- **Optional dependency groups** — `[semantic]` (ChromaDB, embeddings), `[pdf]` (PyMuPDF, EPUB), `[all]`. Base install is lightweight with no ML dependencies.
+
+### Refactored
+- Deduplicated 7 item-formatting functions into single `format_item_result()` with configurable abstract length, tags, and extra fields.
+- Extracted `_normalize_limit()` helper replacing 12 copy-pasted `isinstance(limit, str)` blocks.
+- Consolidated duplicate `suppress_stdout()` into `utils.py`.
+- Merged `_strip_xml_tags()` into `clean_html()` with `collapse_whitespace` parameter.
+- Extended `format_creators()` to handle string creators; `_format_bbt_result()` now delegates to it.
+- Collapsed `get_annotations`/`_get_annotations` wrapper into single function.
+- Modernized typing in 5 modules: `Optional[X]` → `X | None`, `Dict` → `dict`, `List` → `list`.
+- Removed dead code: unused `_extract_item_key_from_input()` function, stale typing imports across 7 modules.
+
+### Fixed
+- **Stale embedding model detection** — ChromaDB collections created with a deprecated model (e.g., `text-embedding-004`) are now auto-detected and recreated on startup.
+- **Bare `except:` clauses** — replaced with specific exception types in `better_bibtex_client.py`.
+- **PDF outline import order** — defers PyMuPDF import until after attachment check.
+- **Suppressed noisy pdfminer warnings** during PDF text extraction.
+
+### Docs
+- README documents optional extras (`[semantic]`, `[pdf]`, `[all]`), write operations, and embedding model troubleshooting.
+- Removed stale fork enhancements section.
+
 ## [0.1.7] - 2026-03-16
 
 ### Changed
@@ -17,12 +50,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Updater: do not suggest downgrading when the local version is ahead of the latest PyPI release (common when installed from a fork or git URL).
 
-## [0.1.5] - 2026-03-16
+## [0.1.5] - 2026-03-22
+
+### Added
+- **Write operations** — 10+ new tools: `create_item`, `update_item`, `create_note`, `add_tags`, `batch_update_tags`, `create_collection`, `add_to_collection`, `remove_from_collection`, `add_by_doi`, `add_by_url`, `add_from_file` (PR #165).
+- **BetterBibTeX citation key lookup** — `search_by_citation_key` searches both BetterBibTeX JSON-RPC and the Extra field (#72).
+- **PDF outline extraction** — `get_pdf_outline` returns table of contents from PDFs.
+- **Annotation page labels** — `get_annotations` now includes `annotationPageLabel` and `annotationPosition` data (#159).
+- **PDF timeout** — configurable `pdf_timeout` (default 30s) skips slow PDFs during fulltext extraction (#74).
+- **Semantic search quality** — combined field+fulltext embeddings, Gemini `retrieval_query`/`retrieval_document` fix, model-aware tokenizer, optional cross-encoder re-ranking (PR #154).
+- **Abstracts in collection items** — `get_collection_items` now includes abstracts (#143).
+- **Local-first fulltext extraction** — prefers local DB/storage before remote `dump()` for file-backed attachments (PR #166).
+- **`--fulltext` guard** — aborts with clear error when used without `ZOTERO_LOCAL` enabled (PR #156).
+- **Fork import workflow** — smart `zotero_add_items_by_identifier`, source-aware PDF cascade, local-copy reconcile, and collection-level dedupe/repair for research-init style ingestion.
 
 ### Fixed
-- Handle local Zotero API `/file` redirects to `file://...` when downloading attachments (fulltext and PDF-extraction annotations).
-- Avoid crashing on import in some environments by lazily importing `markitdown`; add a lightweight PDF fallback conversion path.
-- Make `import zotero_mcp` lightweight by lazily importing the server (`mcp`) only when requested.
+- **search_notes** — fixed `qmode` and client-side filter to actually find notes (#137).
+- **batch_update_tags** — fixed stale tag set, response type check, and added hybrid local+web mode (#162).
+- **get_tags pagination** — uses `zot.everything()` for reliable tag retrieval (#70).
+- **Fulltext truncation** — removed hardcoded 10k/5k char caps; model-aware truncation via `embedding_max_tokens` (#153, #134).
+- **Local mode file:// paths** — resolves `file://`, absolute paths, and `attachments:` prefixes (#116).
+- **Child notes** — `create_note` properly attaches as child via web API in local mode (#133).
+- **ChromaDB embedding conflict** — auto-detects and resets collection on model change (#109).
+- **FastMCP compatibility** — removed deprecated `dependencies` parameter (#117, #61).
+- **PDF outline import order** — defers PyMuPDF import until after attachment check.
+- **Update interval display** — fixed misleading display for daily schedule (PR #144).
+- **Config loading** — embedding model config now loads correctly from config file (#76).
+- **Fork PDF import pipeline** — improved identifier-first import, PDF rescue, and duplicate reconciliation behavior for production research workflows.
+
+## [0.1.4] - 2026-03-09
+
+### Added
+- Model-aware token truncation for embedding models.
+
+### Fixed
+- Truncate documents to embedding model token limit to prevent failures with large texts.
+- Search notes now correctly finds notes by content.
+- Note creation properly attaches notes as child items via web API.
+- Auto-reset ChromaDB collection on embedding model change.
+- Updated default Gemini model to `gemini-embedding-001`.
+- Implemented `get_config`/`build_from_config` for ChromaDB embedding functions.
+- Fixed test `FakeChromaClient` missing `embedding_max_tokens` attribute.
 
 ## [0.1.3] - 2026-02-20
 
