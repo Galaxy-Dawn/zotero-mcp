@@ -23,13 +23,14 @@
 
 This is a personal fork. The main additions over the upstream repo:
 
-### ✍️ 10 New Write Tools (require Web API credentials)
+### ✍️ Write Tools Added in This Fork (require Web API credentials)
 
 | Tool | What it does |
 |------|-------------|
-| `zotero_add_items_by_doi` | Import papers by DOI — metadata fetched from CrossRef |
-| `zotero_add_items_by_arxiv` | Import preprints by arXiv ID, URL, or DOI prefix |
-| `zotero_add_item_by_url` | Save a webpage as a Zotero item |
+| `zotero_add_items_by_identifier` | Default paper-import entrypoint for DOI, arXiv, landing pages, or direct PDF URLs |
+| `zotero_add_items_by_doi` | Compatibility import entrypoint for DOI-only workflows |
+| `zotero_add_items_by_arxiv` | Compatibility import entrypoint for arXiv-only workflows |
+| `zotero_add_item_by_url` | Compatibility entrypoint for pure webpage saves |
 | `zotero_update_item` | Update any field on an existing item |
 | `zotero_update_note` | Replace the HTML content of an existing note |
 | `zotero_create_collection` | Create a top-level or nested collection |
@@ -37,8 +38,15 @@ This is a personal fork. The main additions over the upstream repo:
 | `zotero_update_collection` | Rename a collection or change its parent |
 | `zotero_delete_collection` | Delete a collection (items inside are kept) |
 | `zotero_delete_items` | Move items to trash (recoverable) |
-| `zotero_find_and_attach_pdfs` | Find OA PDFs for existing items via Unpaywall and attach them |
+| `zotero_find_and_attach_pdfs` | Re-run the PDF cascade for existing items (landing-page hints first, then Unpaywall) |
+| `zotero_reconcile_collection_duplicates` | Dedupe a collection, merge memberships, and optionally repair missing PDFs |
 | `zotero_add_linked_url_attachment` | Add a linked URL attachment to an existing item |
+
+> Public import API is intentionally small: prefer `zotero_add_items_by_identifier` as the default paper-import entrypoint. Collection-level dedupe is exposed as a maintenance tool, while import-ledger inspection and local-copy reconcile remain internal implementation details.
+>
+> Default import output is intentionally user-facing: it tells you whether the item was imported as a paper or webpage, and whether a PDF was attached. For debug sessions, set `ZOTERO_MCP_DEBUG_IMPORT=1` to expand `route`, `pdf_source`, and related implementation details in terminal output.
+>
+> Optional browser-assisted rescue is also supported for cookie-gated PDFs. Install the browser extra (`pip install 'zotero-mcp-server[browser]'` or `uv pip install '.[browser]'`) and run `python -m playwright install chromium`. Advanced users can point Playwright at a persistent browser profile with `ZOTERO_MCP_PLAYWRIGHT_USER_DATA_DIR`, and can override `ZOTERO_MCP_PLAYWRIGHT_CHANNEL`, `ZOTERO_MCP_PLAYWRIGHT_HEADLESS`, and `ZOTERO_MCP_PLAYWRIGHT_PDF_TIMEOUT_SEC`.
 
 ### 🔄 Auto-Detect Local vs Web API
 
@@ -89,7 +97,7 @@ If `ZOTERO_API_KEY` / `ZOTERO_LIBRARY_ID` are already set in your MCP client con
 - Create and update notes
 
 ### ✍️ Write & Organize Your Library
-- **Import papers** by DOI, arXiv ID, or URL — metadata fetched automatically
+- **Import papers** with the default `zotero_add_items_by_identifier` entrypoint — DOI, arXiv ID, landing page, and direct PDF URL are all accepted
 - **Update items** — edit any field on existing library entries
 - **Manage collections** — create, rename, re-parent, and delete collections
 - **Move items** — add or remove items from collections in bulk
@@ -438,11 +446,14 @@ The first time you use PDF annotation features, the necessary tools will be auto
 ### ✍️ Write Tools (require Web API credentials)
 
 **Import**
-- `zotero_add_items_by_doi`: Import papers by DOI — fetches metadata from CrossRef automatically
-- `zotero_add_items_by_arxiv`: Import preprints by arXiv ID (bare ID, `arXiv:` prefix, full URL, or DOI prefix all accepted)
-- `zotero_add_item_by_url`: Save a webpage as a Zotero item — title extracted from `og:title` or `<title>`
-- `zotero_find_and_attach_pdfs`: Find and attach OA PDFs for existing items via Unpaywall (requires `UNPAYWALL_EMAIL`)
+- `zotero_add_items_by_identifier`: **Default paper-import entrypoint**. Accepts DOI, arXiv IDs, landing pages, and direct PDF URLs
+- `zotero_add_items_by_doi`: Compatibility wrapper for DOI-only callers
+- `zotero_add_items_by_arxiv`: Compatibility wrapper for arXiv-only callers
+- `zotero_add_item_by_url`: Compatibility wrapper for pure webpage saves
+- `zotero_find_and_attach_pdfs`: Re-run the PDF cascade for existing items; Unpaywall still requires `UNPAYWALL_EMAIL` when DOI fallback is needed
 - `zotero_add_linked_url_attachment`: Add a linked URL attachment to an existing item
+
+> Recommendation: for new integrations and prompts, default to `zotero_add_items_by_identifier`. Keep the DOI/arXiv/URL-specific tools only for backward compatibility or explicitly constrained workflows.
 
 **Edit**
 - `zotero_update_item`: Update any field on an existing library item
@@ -453,6 +464,7 @@ The first time you use PDF annotation features, the necessary tools will be auto
 - `zotero_move_items_to_collection`: Add or remove items from a collection
 - `zotero_update_collection`: Rename a collection or change its parent
 - `zotero_delete_collection`: Permanently delete a collection (items inside are kept)
+- `zotero_reconcile_collection_duplicates`: Dedupe a collection, merge memberships onto a canonical item, and optionally repair missing PDFs
 
 **Deletion**
 - `zotero_delete_items`: Move one or more items to trash (recoverable)
