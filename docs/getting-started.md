@@ -229,3 +229,30 @@ zotero-mcp update-db --force-rebuild
 Other than time waiting for the rebuild, there is generally little to no risk involved in triggering the rebuild - so if you're experiencing database-related issues, it's worth trying this command.
 
 For more help, try the [discussions](https://github.com/54yyyu/zotero-mcp/discussions).
+
+
+## Research-Grade Import Path (Dual API)
+
+The upstream tools remain available as the generic write surface:
+
+- `zotero_add_by_doi`
+- `zotero_add_by_url`
+- `zotero_add_from_file`
+- `zotero_find_duplicates`
+- `zotero_merge_duplicates`
+
+On top of that, this fork also exposes a research-import compatibility layer for workflows like `Research init`:
+
+- `zotero_add_items_by_identifier` — preferred default for paper import
+- `zotero_add_items_by_doi`
+- `zotero_add_items_by_arxiv`
+- `zotero_find_and_attach_pdfs`
+- `zotero_reconcile_collection_duplicates`
+- `zotero_add_item_by_url`
+
+Recommended behavior for research workflows:
+
+1. Use `zotero_add_items_by_identifier` first.
+2. Let it resolve DOI / arXiv / direct PDF / landing page in that order.
+3. Only fall back to `webpage` when identifier evidence is insufficient.
+4. Run `zotero_reconcile_collection_duplicates` after batch import if you want collection-level cleanup and missing-PDF repair.

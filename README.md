@@ -48,10 +48,10 @@
 - Extract PDF table of contents / outlines (requires `[pdf]` extra)
 
 ### ✏️ Write Operations
-- **Add papers by DOI** with auto-fetched metadata and open-access PDF cascade (Unpaywall, arXiv, Semantic Scholar, PMC)
-- **Add papers by URL** (arXiv, DOI links, generic webpages) or from local files
-- Create and manage collections, update item metadata, batch-update tags
-- Find and merge duplicate items with dry-run preview
+- **Upstream generic write path**: add by DOI, URL, or local file; create/manage collections; update items and tags
+- **Research import compatibility path**: `zotero_add_items_by_identifier` does identifier-first import (DOI → arXiv → direct PDF → landing page)
+- **Source-aware PDF cascade**: explicit PDF hints first, then DOI-based OA fallbacks, then local/browser-assisted rescue when available
+- **Collection repair path**: collection-level dedupe plus missing-PDF postpass for research workflows
 - **Hybrid mode**: local reads + web API writes for local-mode users
 
 ### 🌐 Flexible Access Methods
@@ -353,10 +353,18 @@ The first time you use PDF annotation features, the necessary tools will be auto
 - `zotero_search_notes`: Search in notes and annotations (including PDF-extracted)
 - `zotero_create_note`: Create a new note for an item (beta feature)
 
+### 🧠 Research Import Compatibility Tools
+- `zotero_add_items_by_identifier`: Default research-grade import entrypoint; prefers paper/preprint over webpage fallback
+- `zotero_add_items_by_doi`: Compatibility wrapper for DOI-first paper import with PDF cascade
+- `zotero_add_items_by_arxiv`: Compatibility wrapper for arXiv/preprint import with canonical PDF attach
+- `zotero_find_and_attach_pdfs`: Repair missing PDFs on existing items using the same PDF cascade
+- `zotero_reconcile_collection_duplicates`: Collection-level dedupe plus optional missing-PDF postpass
+- `zotero_add_item_by_url`: Compatibility entry that intentionally keeps pure webpage semantics
+
 ### 📦 Item & Collection Management Tools
-- `zotero_add_by_doi`: Add a paper by DOI with automatic metadata and open-access PDF attachment
-- `zotero_add_by_url`: Add a paper by URL (arXiv, DOI URLs, and general webpages)
-- `zotero_add_from_file`: Import a local PDF or EPUB file with automatic DOI extraction
+- `zotero_add_by_doi`: Upstream generic DOI import
+- `zotero_add_by_url`: Upstream generic URL import (DOI URLs, arXiv URLs, generic webpages)
+- `zotero_add_from_file`: Upstream local-file import with DOI extraction
 - `zotero_create_collection`: Create a new collection (folder/project) in your library
 - `zotero_search_collections`: Search for collections by name to find their keys
 - `zotero_manage_collections`: Add or remove items from collections
